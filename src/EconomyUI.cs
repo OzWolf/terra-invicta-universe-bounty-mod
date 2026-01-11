@@ -1,5 +1,8 @@
 ﻿using System;
+using System.IO;
 using System.Linq;
+using System.Reflection.Emit;
+using HarmonyLib;
 using ModestTree;
 using ModKit;
 using PavonisInteractive.TerraInvicta;
@@ -11,9 +14,12 @@ namespace UniverseBounty
     public static class EconomyUI
     {
         private static TIFactionState? Faction;
-        private const string ShipBuildTimeTemplate = "It currently takes <b>{0}/{1}/{2}</b> days to build a dreadnought via space dock/shipyard/spaceworks.";
-        private const string ShipConstructionEffectName = "Effect_ShipConstructionTimeReduction10";
+
+        private const string ShipBuildTimeTemplate =
+            "It currently takes <b>{0}/{1}/{2}</b> days to build a dreadnought via space dock/shipyard/spaceworks.";
+
         private const string ControlPointBonusEffectName = "Effect_ControlPointMaintenanceBonus10";
+        private const string ShipConstructionEffectName = "Effect_ShipConstructionTimeReduction10";
 
         public static void OnGUI()
         {
@@ -87,6 +93,16 @@ namespace UniverseBounty
             UI.Space(10);
 
             DrawResourceButtons(
+                "Volatiles",
+                new ResourceButtonAction("+ 100", AddToResourceAction(FactionResource.Volatiles, 100)),
+                new ResourceButtonAction("+ 1,000", AddToResourceAction(FactionResource.Volatiles, 1000)),
+                new ResourceButtonAction("+ 10,000", AddToResourceAction(FactionResource.Volatiles, 10000)),
+                new ResourceButtonAction("+ 100,000", AddToResourceAction(FactionResource.Volatiles, 100000)),
+                new ResourceButtonAction("+ 10/m", GainIncomeAction(InstantEffect.GainVolatilesIncome, 10))
+            );
+            UI.Space(10);
+
+            DrawResourceButtons(
                 "Metals",
                 new ResourceButtonAction("+ 100", AddToResourceAction(FactionResource.Metals, 100)),
                 new ResourceButtonAction("+ 1,000", AddToResourceAction(FactionResource.Metals, 1000)),
@@ -153,10 +169,8 @@ namespace UniverseBounty
 
         private static void DrawConstruction()
         {
-            var effect = TemplateManager.Find<TIEffectTemplate>(ShipConstructionEffectName);
             var dreadnoughtTemplate = TemplateManager.Find<TIShipHullTemplate>("Dreadnought");
 
-            var shipBuildingAmount = (1f - effect.value).ToString("P");
             var text = string.Format(
                 ShipBuildTimeTemplate,
                 dreadnoughtTemplate.constructionTime_Days(1, Faction).ToString("###"),
@@ -168,18 +182,26 @@ namespace UniverseBounty
             {
                 UI.Label("STARSHIPS".orange().bold(), UI.MinWidth(220), UI.MaxWidth(220));
                 UI.Space(10);
-                UI.ActionButton($"- {shipBuildingAmount}", () => ApplyEffectAction(effect), UIStyles.StandardButtonStyle,
+                UI.ActionButton("COMPLETE", OnCompleteShipsAction, UIStyles.StandardButtonStyle, UI.MinWidth(150),
+                    UI.MaxWidth(150));
+                UI.Space(10);
+                UI.ActionButton($"- 10%", ApplyEffectAction(ShipConstructionEffectName), UIStyles.StandardButtonStyle,
                     UI.MinWidth(150), UI.MaxWidth(150));
                 UI.Space(10);
                 UI.Label(text, UIStyles.Hint);
             }
+
             UI.Space(10);
 
             using (UI.HorizontalScope())
             {
                 UI.Label("HAB MODULES".orange().bold(), UI.MinWidth(220), UI.MaxWidth(220));
                 UI.Space(10);
-                UI.ActionButton("COMPLETE", OnCompleteHabModulesAction, UIStyles.StandardButtonStyle, UI.MinWidth(150), UI.MaxWidth(150));
+                UI.ActionButton("COMPLETE", OnCompleteHabModulesAction, UIStyles.StandardButtonStyle, UI.MinWidth(150),
+                    UI.MaxWidth(150));
+                UI.Space(10);
+                UI.ActionButton($"- 10%", OnHabModuleConstructionBoost,
+                    UIStyles.StandardButtonStyle, UI.MinWidth(150), UI.MaxWidth(150));
                 UI.Space(10);
                 UI.Label("Complete all hab modules under construction", UIStyles.Hint);
             }
@@ -194,6 +216,20 @@ namespace UniverseBounty
                     .Where(m => m.underConstruction)
                     .ForEach(m => m.hab.CompleteModuleConstruction(m));
             }
+
+            void OnCompleteShipsAction()
+            {
+                Faction?.shipConstructionModules.FindAll(m => m.buildingShip).ForEach(m =>
+                {
+                    m.currentShipConstructionQueueItem.daysToCompletion = 0;
+                });
+            }
+
+            void OnHabModuleConstructionBoost()
+            {
+                Main.ModSettings.HabModuleBuildBoosts++;
+                Main.ModSettings.Save(Main.ModEntry!);
+            }
         }
 
         private static void DrawResourceButtons(string title, params ResourceButtonAction[] actions)
@@ -205,7 +241,8 @@ namespace UniverseBounty
                 UI.Label(title.ToUpper().orange().bold(), UI.MinWidth(220), UI.MaxWidth(220));
                 foreach (var action in actions)
                 {
-                    UI.ActionButton(action.Label, () => OnClick(action.Action), UIStyles.StandardButtonStyle, UI.MinWidth(150), UI.MaxWidth(150));
+                    UI.ActionButton(action.Label, () => OnClick(action.Action), UIStyles.StandardButtonStyle,
+                        UI.MinWidth(150), UI.MaxWidth(150));
                     UI.Space(5);
                 }
             }
@@ -226,15 +263,17 @@ namespace UniverseBounty
                 Faction.AddToCurrentResource(amount, resource);
         };
 
-        private static Action ApplyEffectAction(string effectName)
+        private static Action ApplyEffectAction(string effectName) => () =>
         {
             var effect = TemplateManager.Find<TIEffectTemplate>(effectName);
-            return effect == null ? () => { } : ApplyEffectAction(effect);
-        }
+            if (effect == null) return;
+            ApplyEffectAction(effect)();
+        };
 
         private static Action ApplyEffectAction(TIEffectTemplate effect) => () =>
         {
             if (Faction == null) return;
+
             TIEffectsState.AddEffect(effect, Faction);
             Faction.SetResourceIncomeDataDirty();
         };

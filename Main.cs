@@ -11,6 +11,7 @@ namespace UniverseBounty
     public class Main
     {
         public static Settings ModSettings = new Settings();
+        public static UnityModManager.ModEntry? ModEntry;
 
         private static readonly NamedAction[] Tabs =
         {
@@ -22,6 +23,7 @@ namespace UniverseBounty
 
         public static bool Load(UnityModManager.ModEntry entry)
         {
+            ModEntry = entry;
             var harmony = new Harmony(entry.Info.Id);
             harmony.PatchAll();
 

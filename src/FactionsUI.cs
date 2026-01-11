@@ -164,8 +164,8 @@ namespace UniverseBounty
         private static void ResetHate(TIFactionState faction)
         {
             if (Faction == null) return;
-            faction.SetFactionHate(Faction, 0);
-            Faction.SetFactionHate(faction, 0);
+            faction.SetFactionHate(Faction, 0, false);
+            Faction.SetFactionHate(faction, 0, false);
         }
 
         private static void RevealIntel(TIFactionState faction)
